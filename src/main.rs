@@ -18,6 +18,9 @@ struct Cli {
     /// Name of the array (resolution level)
     #[arg(short, long, default_value = "/0")]
     array_name: String,
+    /// Indices to slice non-XY dimensions
+    #[arg(short, long, value_delimiter = ',', value_parser = clap::value_parser!(u64))]
+    slice_indices: Option<Vec<u64>>,
     /// Maximum size to display in each dimension
     #[arg(short, long, default_value = "720")]
     crop_size: u64,
@@ -36,24 +39,36 @@ fn ensure_at_least_2d(array_shape: &[u64]) -> Result<()> {
     Ok(())
 }
 
-fn start_and_shape(array_shape: &[u64], crop_size: u64) -> Result<(Vec<u64>, Vec<u64>)> {
+fn start_and_shape(array_shape: &[u64], cli: &Cli) -> Result<(Vec<u64>, Vec<u64>)> {
     let ndims = array_shape.len();
     ensure_at_least_2d(array_shape)?;
     let mut start: Vec<u64> = vec![0; ndims];
-    for i in 0..ndims - 2 {
-        let idx = array_shape[i] / 2;
-        println!("Slicing axis {:?} at index {:?}", i, idx);
-        start[i] = idx;
+    // Use provided slice indices or default to middle of each dimension
+    if let Some(indices) = &cli.slice_indices {
+        for (i, &idx) in indices.iter().enumerate().take(ndims - 2) {
+            if idx >= array_shape[i] {
+                anyhow::bail!("Slice index {:?} out of bounds for dimension {:?}", idx, i);
+            }
+            println!("Slicing axis {:?} at index {:?}", i, idx);
+            start[i] = idx;
+        }
+    } else {
+        // No indices provided, use middle of each dimension
+        for i in 0..ndims - 2 {
+            let idx = array_shape[i] / 2;
+            println!("Slicing axis {:?} at default index {:?}", i, idx);
+            start[i] = idx;
+        }
     }
     let mut shape = vec![1; ndims];
     let axes = ["Y", "X"];
     for i in 0..2 {
         let full_size = array_shape[ndims - 2 + i];
-        shape[ndims - 2 + i] = if crop_size >= full_size {
+        shape[ndims - 2 + i] = if cli.crop_size >= full_size {
             full_size
         } else {
-            println!("Cropping dimension {:?} size {:?}", axes[i], crop_size);
-            crop_size
+            println!("Cropping dimension {:?} size {:?}", axes[i], cli.crop_size);
+            cli.crop_size
         };
     }
     Ok((start, shape))
@@ -104,7 +119,7 @@ fn read_image(cli: &Cli) -> Result<Array2<f32>> {
     let store = Arc::new(FilesystemStore::new(&cli.image_path)?);
     let array = zarrs::array::Array::open(store, &cli.array_name)?;
     let array_shape = array.shape();
-    let (start, shape) = start_and_shape(&array_shape, cli.crop_size)?;
+    let (start, shape) = start_and_shape(&array_shape, cli)?;
     let subset = zarrs::array_subset::ArraySubset::new_with_start_shape(start, shape)?;
     let decoded = decode_subset(&array, &subset)?;
     Ok(decoded)

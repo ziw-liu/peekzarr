@@ -1210,8 +1210,6 @@ dependencies = [
  "ndarray",
  "ndarray-stats",
  "noisy_float",
- "serde",
- "serde_json",
  "viuer",
  "zarrs",
 ]
