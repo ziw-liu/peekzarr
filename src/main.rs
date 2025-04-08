@@ -11,7 +11,7 @@ use std::vec;
 use zarrs::filesystem::FilesystemStore;
 
 #[derive(Parser)]
-#[command(version, about = "Peek into OME-Zarr images in the terminal")]
+#[command(version, about = "Peek into OME-Zarr images in the terminal.")]
 struct Cli {
     /// Path to the OME-Zarr group containing arrays
     image_path: PathBuf,
@@ -21,10 +21,10 @@ struct Cli {
     /// Maximum size to display in each dimension
     #[arg(short, long, default_value = "720")]
     crop_size: u64,
-    /// lower quantile for normalization
+    /// Lower quantile for normalization
     #[arg(long, default_value = "0.001")]
     low: f64,
-    /// upper quantile for normalization
+    /// Upper quantile for normalization
     #[arg(long, default_value = "0.999")]
     high: f64,
 }
