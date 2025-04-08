@@ -41,7 +41,9 @@ fn start_and_shape(array_shape: &[u64], crop_size: u64) -> Result<(Vec<u64>, Vec
     ensure_at_least_2d(array_shape)?;
     let mut start: Vec<u64> = vec![0; ndims];
     for i in 0..ndims - 2 {
-        start[i] = array_shape[i] / 2;
+        let idx = array_shape[i] / 2;
+        println!("Slicing axis {:?} at index {:?}", i, idx);
+        start[i] = idx;
     }
     let mut shape = vec![1; ndims];
     let axes = ["Y", "X"];
