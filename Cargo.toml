@@ -10,3 +10,5 @@ image = "0.25"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 ndarray = "0.16"
+ndarray-stats = "0.6"
+noisy_float = "0.2"

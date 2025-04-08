@@ -2,18 +2,31 @@ use anyhow::{Ok, Result};
 use clap::Parser;
 use image::{DynamicImage, GrayImage};
 use ndarray::prelude::*;
+use ndarray_stats::interpolate::Nearest;
+use ndarray_stats::QuantileExt;
+use noisy_float::types::n64;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::vec;
 use zarrs::filesystem::FilesystemStore;
 
 #[derive(Parser)]
 #[command(version, about = "Peek into OME-Zarr images in the terminal")]
 struct Cli {
+    // Path to the OME-Zarr group containing arrays
     image_path: PathBuf,
+    // Name of the array (resolution level)
     #[arg(short, long, default_value = "/0")]
     array_name: String,
+    // Maximum size to display in each dimension
     #[arg(short, long, default_value = "720")]
     crop_size: u64,
+    // lower quantile for normalization
+    #[arg(long, default_value = "0.001")]
+    low: f64,
+    // upper quantile for normalization
+    #[arg(long, default_value = "0.999")]
+    high: f64,
 }
 
 fn ensure_at_least_2d(array_shape: &[u64]) -> Result<()> {
@@ -82,8 +95,8 @@ fn decode_subset(
     Ok(reshaped)
 }
 
-fn read_image(cli: Cli) -> Result<Array2<f32>> {
-    let store = Arc::new(FilesystemStore::new(cli.image_path)?);
+fn read_image(cli: &Cli) -> Result<Array2<f32>> {
+    let store = Arc::new(FilesystemStore::new(&cli.image_path)?);
     let array = zarrs::array::Array::open(store, &cli.array_name)?;
     let array_shape = array.shape();
     let (start, shape) = start_and_shape(&array_shape, cli.crop_size)?;
@@ -92,12 +105,20 @@ fn read_image(cli: Cli) -> Result<Array2<f32>> {
     Ok(decoded)
 }
 
+fn image_quantile(array: &Array2<f32>, q: f64) -> Result<f32> {
+    let quantile = array
+        .flatten()
+        .quantile_axis_skipnan_mut(Axis(0), n64(q), &Nearest)?
+        .into_scalar();
+    Ok(quantile)
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let min = 100.0;
-    let max = 800.0;
-    let decoded = read_image(cli)?;
+    let decoded = read_image(&cli)?;
     let (rows, columns) = decoded.dim();
+    let min = image_quantile(&decoded, cli.low)?;
+    let max = image_quantile(&decoded, cli.high)?;
     let normalized = decoded.mapv(|x| ((x.clamp(min, max) - min) / (max - min) * 255.0) as u8);
     let data = normalized
         .as_standard_layout()
