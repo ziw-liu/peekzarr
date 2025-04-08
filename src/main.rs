@@ -22,7 +22,7 @@ struct Cli {
     #[arg(short, long, value_delimiter = ',', value_parser = clap::value_parser!(u64))]
     slice_indices: Option<Vec<u64>>,
     /// Maximum size to display in each dimension
-    #[arg(short, long, default_value = "720")]
+    #[arg(short, long, default_value = "2560")]
     crop_size: u64,
     /// Lower quantile for normalization
     #[arg(long, default_value = "0.001")]
