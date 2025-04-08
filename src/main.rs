@@ -39,32 +39,46 @@ fn ensure_at_least_2d(array_shape: &[u64]) -> Result<()> {
     Ok(())
 }
 
+fn push_index(start: &mut Vec<u64>, dimension: usize, value: u64) {
+    println!("Slicing dimension {} at index {}", dimension, value);
+    start.push(value);
+}
+
 fn start_and_shape(array_shape: &[u64], cli: &Cli) -> Result<(Vec<u64>, Vec<u64>)> {
     let ndims = array_shape.len();
     ensure_at_least_2d(array_shape)?;
-    let mut start: Vec<u64> = vec![0; ndims];
-    // Use provided slice indices or default to middle of each dimension
-    if let Some(indices) = &cli.slice_indices {
-        for (i, &idx) in indices.iter().enumerate().take(ndims - 2) {
-            if idx >= array_shape[i] {
-                anyhow::bail!("Slice index {:?} out of bounds for dimension {:?}", idx, i);
+    let ndims_to_be_sliced = ndims - 2;
+    let mut start: Vec<u64> = vec![];
+    if let Some(slice_indices) = &cli.slice_indices {
+        if slice_indices.len() > ndims_to_be_sliced {
+            anyhow::bail!(
+                "Too many slice indices provided. Expected {} but got {}",
+                ndims_to_be_sliced,
+                slice_indices.len()
+            );
+        }
+        for (i, slice_index) in slice_indices.iter().enumerate() {
+            if *slice_index >= array_shape[i] {
+                anyhow::bail!(
+                    "Slice index {} is out of bounds for dimension {}",
+                    slice_index,
+                    i
+                );
             }
-            println!("Slicing axis {:?} at index {:?}", i, idx);
-            start[i] = idx;
+            push_index(&mut start, i, *slice_index);
         }
-    } else {
-        // No indices provided, use middle of each dimension
-        for i in 0..ndims - 2 {
-            let idx = array_shape[i] / 2;
-            println!("Slicing axis {:?} at default index {:?}", i, idx);
-            start[i] = idx;
-        }
+    }
+    for i in start.len()..(ndims_to_be_sliced) {
+        push_index(&mut start, i, array_shape[i] / 2);
+    }
+    for _ in 0..2 {
+        start.push(0);
     }
     let mut shape = vec![1; ndims];
     let axes = ["Y", "X"];
     for i in 0..2 {
-        let full_size = array_shape[ndims - 2 + i];
-        shape[ndims - 2 + i] = if cli.crop_size >= full_size {
+        let full_size = array_shape[ndims_to_be_sliced + i];
+        shape[ndims_to_be_sliced + i] = if cli.crop_size >= full_size {
             full_size
         } else {
             println!("Cropping dimension {:?} size {:?}", axes[i], cli.crop_size);

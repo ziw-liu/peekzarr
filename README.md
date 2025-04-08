@@ -23,4 +23,4 @@ Known to work with recent versions of:
 Known issues:
 
 - VS Code: [`terminal.integrated.enableImages`](vscode://settings/terminal.integrated.enableImages) needs to be enabled.
-- tmux: To view high resolution images, version 3.4+ is required and the feature is behind a compile flag.
+- tmux: To view high resolution images, version 3.4+ is required and the feature is behind a compile flag. The true-color feature also needs to be enabled.
