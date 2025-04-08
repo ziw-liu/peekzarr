@@ -13,12 +13,13 @@ use zarrs::filesystem::FilesystemStore;
 #[derive(Parser)]
 #[command(version, about = "Peek into OME-Zarr images in the terminal.")]
 struct Cli {
-    /// Path to the OME-Zarr group containing arrays
+    /// Path to the OME-Zarr group containing arrays (FOV level in HCS)
     image_path: PathBuf,
     /// Name of the array (resolution level)
     #[arg(short, long, default_value = "/0")]
     array_name: String,
-    /// Indices to slice non-XY dimensions
+    /// Indices to slice non-XY dimensions,
+    /// e.g. 0,1,2 for time, channel, Z
     #[arg(short, long, value_delimiter = ',', value_parser = clap::value_parser!(u64))]
     slice_indices: Option<Vec<u64>>,
     /// Maximum size to display in each dimension
