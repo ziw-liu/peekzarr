@@ -39,7 +39,10 @@ fn ensure_at_least_2d(array_shape: &[u64]) -> Result<()> {
 fn start_and_shape(array_shape: &[u64], crop_size: u64) -> Result<(Vec<u64>, Vec<u64>)> {
     let ndims = array_shape.len();
     ensure_at_least_2d(array_shape)?;
-    let start: Vec<u64> = vec![0; ndims];
+    let mut start: Vec<u64> = vec![0; ndims];
+    for i in 0..ndims - 2 {
+        start[i] = array_shape[i] / 2;
+    }
     let mut shape = vec![1; ndims];
     let axes = ["Y", "X"];
     for i in 0..2 {
