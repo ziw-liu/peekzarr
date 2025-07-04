@@ -6,6 +6,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 zarrs = "0.21"
+zarrs_http = "0.2.2"
 viuer = { version = "0.9", features = ["sixel"] }
 image = "0.25"
 anyhow = "1"

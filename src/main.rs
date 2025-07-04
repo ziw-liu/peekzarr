@@ -9,11 +9,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::vec;
 use zarrs::filesystem::FilesystemStore;
+use zarrs_http::HTTPStore;
 
 #[derive(Parser)]
 #[command(version, about = "Peek into OME-Zarr images in the terminal.")]
 struct Cli {
-    /// Path to the OME-Zarr group containing arrays (FOV level in HCS)
+    /// Path or URL to the OME-Zarr group containing arrays (FOV level in HCS)
     image_path: PathBuf,
     /// Name of the array (resolution level)
     #[arg(short, long, default_value = "/0")]
@@ -89,8 +90,8 @@ fn start_and_shape(array_shape: &[u64], cli: &Cli) -> Result<(Vec<u64>, Vec<u64>
     Ok((start, shape))
 }
 
-fn decode_subset(
-    array: &zarrs::array::Array<FilesystemStore>,
+fn decode_subset<TStore: zarrs::storage::ReadableStorageTraits + 'static>(
+    array: &zarrs::array::Array<TStore>,
     subset: &zarrs::array_subset::ArraySubset,
 ) -> Result<Array2<f32>> {
     use zarrs::array::DataType;
@@ -130,14 +131,24 @@ fn decode_subset(
     Ok(reshaped)
 }
 
-fn read_image(cli: &Cli) -> Result<Array2<f32>> {
-    let store = Arc::new(FilesystemStore::new(&cli.image_path)?);
+fn read_image_with_store<TStore: zarrs::storage::ReadableStorageTraits + 'static>(cli: &Cli, store: Arc<TStore>) -> Result<Array2<f32>> {
     let array = zarrs::array::Array::open(store, &cli.array_name)?;
     let array_shape = array.shape();
     let (start, shape) = start_and_shape(&array_shape, cli)?;
     let subset = zarrs::array_subset::ArraySubset::new_with_start_shape(start, shape)?;
     let decoded = decode_subset(&array, &subset)?;
     Ok(decoded)
+}
+
+fn read_image(cli: &Cli) -> Result<Array2<f32>> {
+    let path_str = cli.image_path.to_string_lossy();
+    if path_str.to_ascii_lowercase().starts_with("http://") || path_str.to_ascii_lowercase().starts_with("https://") {
+        let store = Arc::new(HTTPStore::new(path_str.as_ref())?);
+        read_image_with_store(cli, store)
+    } else {
+        let store = Arc::new(FilesystemStore::new(&cli.image_path)?);
+        read_image_with_store(cli, store)
+    }
 }
 
 fn image_quantile(array: &Array2<f32>, q: f64) -> Result<f32> {
