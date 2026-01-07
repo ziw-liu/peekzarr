@@ -5,16 +5,12 @@ Supports local files and HTTP.
 
 ## Example
 
-```
+```sh
 peekzarr https://public.czbiohub.org/comp.micro/viscy/VS_datasets/VSCyto2D/test/a549_hoechst_cellmask_test.zarr/0/0/0 -s 0,0
 peekzarr https://public.czbiohub.org/royerlab/zebrahub/imaging/single-objective/ZSNS001.ome.zarr -a /2
 ```
 
 See full help message with `peekzarr -h`.
-
-## System requirements
-
-libsixel
 
 ## Build
 
