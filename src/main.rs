@@ -122,6 +122,9 @@ fn decode_subset<TStore: zarrs::storage::ReadableStorageTraits + 'static>(
         DataType::UInt32 => array
             .retrieve_array_subset_ndarray::<u32>(&subset)?
             .mapv(|x| x as f32),
+        DataType::UInt64 => array
+            .retrieve_array_subset_ndarray::<u64>(&subset)?
+            .mapv(|x| x as f32),
         DataType::Float32 => array.retrieve_array_subset_ndarray::<f32>(&subset)?,
         DataType::Float64 => array
             .retrieve_array_subset_ndarray::<f64>(&subset)?
