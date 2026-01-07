@@ -46,12 +46,16 @@ fn push_index(start: &mut Vec<u64>, dimension: usize, value: u64) {
     start.push(value);
 }
 
-fn start_and_shape(array_shape: &[u64], cli: &Cli) -> Result<(Vec<u64>, Vec<u64>)> {
+fn start_and_shape(
+    array_shape: &[u64],
+    slice_indices: Option<&[u64]>,
+    crop_size: u64,
+) -> Result<(Vec<u64>, Vec<u64>)> {
     let ndims = array_shape.len();
     ensure_at_least_2d(array_shape)?;
     let ndims_to_be_sliced = ndims - 2;
     let mut start: Vec<u64> = vec![];
-    if let Some(slice_indices) = &cli.slice_indices {
+    if let Some(slice_indices) = slice_indices {
         if slice_indices.len() > ndims_to_be_sliced {
             anyhow::bail!(
                 "Too many slice indices provided. Expected {} but got {}",
@@ -80,11 +84,11 @@ fn start_and_shape(array_shape: &[u64], cli: &Cli) -> Result<(Vec<u64>, Vec<u64>
     let axes = ["Y", "X"];
     for i in 0..2 {
         let full_size = array_shape[ndims_to_be_sliced + i];
-        shape[ndims_to_be_sliced + i] = if cli.crop_size >= full_size {
+        shape[ndims_to_be_sliced + i] = if crop_size >= full_size {
             full_size
         } else {
-            println!("Cropping dimension {:?} size {:?}", axes[i], cli.crop_size);
-            cli.crop_size
+            println!("Cropping dimension {:?} size {:?}", axes[i], crop_size);
+            crop_size
         };
     }
     Ok((start, shape))
@@ -131,10 +135,14 @@ fn decode_subset<TStore: zarrs::storage::ReadableStorageTraits + 'static>(
     Ok(reshaped)
 }
 
-fn read_image_with_store<TStore: zarrs::storage::ReadableStorageTraits + 'static>(cli: &Cli, store: Arc<TStore>) -> Result<Array2<f32>> {
+fn read_image_with_store<TStore: zarrs::storage::ReadableStorageTraits + 'static>(
+    cli: &Cli,
+    store: Arc<TStore>,
+) -> Result<Array2<f32>> {
     let array = zarrs::array::Array::open(store, &cli.array_name)?;
     let array_shape = array.shape();
-    let (start, shape) = start_and_shape(&array_shape, cli)?;
+    let (start, shape) =
+        start_and_shape(&array_shape, cli.slice_indices.as_deref(), cli.crop_size)?;
     let subset = zarrs::array_subset::ArraySubset::new_with_start_shape(start, shape)?;
     let decoded = decode_subset(&array, &subset)?;
     Ok(decoded)
@@ -142,7 +150,9 @@ fn read_image_with_store<TStore: zarrs::storage::ReadableStorageTraits + 'static
 
 fn read_image(cli: &Cli) -> Result<Array2<f32>> {
     let path_str = cli.image_path.to_string_lossy();
-    if path_str.to_ascii_lowercase().starts_with("http://") || path_str.to_ascii_lowercase().starts_with("https://") {
+    if path_str.to_ascii_lowercase().starts_with("http://")
+        || path_str.to_ascii_lowercase().starts_with("https://")
+    {
         let store = Arc::new(HTTPStore::new(path_str.as_ref())?);
         read_image_with_store(cli, store)
     } else {
@@ -180,4 +190,192 @@ fn main() -> Result<()> {
     };
     viuer::print(&image, &conf)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_start_and_shape_default_slicing() -> Result<()> {
+        let array_shape = vec![5, 3, 256, 256]; // T, C, Y, X
+        let crop_size = 256u64;
+
+        let (start, shape) = start_and_shape(&array_shape, None, crop_size)?;
+
+        assert_eq!(start.len(), 4);
+        assert_eq!(start[0], 2);
+        assert_eq!(start[1], 1);
+        assert_eq!(start[2], 0);
+        assert_eq!(start[3], 0);
+
+        assert_eq!(shape[0], 1);
+        assert_eq!(shape[1], 1);
+        assert_eq!(shape[2], 256);
+        assert_eq!(shape[3], 256);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_start_and_shape_with_explicit_slicing() -> Result<()> {
+        let array_shape = vec![5, 3, 256, 256]; // T, C, Y, X
+        let crop_size = 256u64;
+        let slice_indices = vec![0, 2]; // Use first timepoint, third channel
+
+        let (start, _shape) = start_and_shape(&array_shape, Some(&slice_indices), crop_size)?;
+
+        assert_eq!(start[0], 0);
+        assert_eq!(start[1], 2);
+        assert_eq!(start[2], 0);
+        assert_eq!(start[3], 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_start_and_shape_with_crop() -> Result<()> {
+        let array_shape = vec![1, 1, 1024, 1024]; // T, C, Y, X
+        let crop_size = 512u64;
+
+        let (_start, shape) = start_and_shape(&array_shape, None, crop_size)?;
+
+        assert_eq!(shape[2], 512);
+        assert_eq!(shape[3], 512);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_array_shape_validation_at_least_2d() -> Result<()> {
+        let array_shape = vec![256]; // Only 1D
+
+        let result = start_and_shape(&array_shape, None, 256);
+        assert!(result.is_err(), "Should reject 1D arrays");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_slice_index_out_of_bounds() -> Result<()> {
+        let array_shape = vec![5, 3, 256, 256];
+        let slice_indices = vec![10]; // Out of bounds for dimension 0 (size 5)
+
+        let result = start_and_shape(&array_shape, Some(&slice_indices), 256);
+        assert!(result.is_err(), "Should reject out-of-bounds indices");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_too_many_slice_indices() -> Result<()> {
+        let array_shape = vec![5, 3, 256, 256]; // 2 dimensions to slice (T and C)
+        let slice_indices = vec![0, 1, 2, 3]; // 4 indices, but only 2 allowed
+
+        let result = start_and_shape(&array_shape, Some(&slice_indices), 256);
+        assert!(result.is_err(), "Should reject too many slice indices");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_quantile_computation() -> Result<()> {
+        use ndarray_stats::interpolate::Nearest;
+        use ndarray_stats::QuantileExt;
+        use noisy_float::types::n64;
+
+        let data =
+            Array2::from_shape_vec((10, 10), (0..100).map(|i| i as f32).collect::<Vec<_>>())?;
+
+        let q_low = data
+            .flatten()
+            .quantile_axis_skipnan_mut(ndarray::Axis(0), n64(0.1), &Nearest)?
+            .into_scalar();
+
+        let q_high = data
+            .flatten()
+            .quantile_axis_skipnan_mut(ndarray::Axis(0), n64(0.9), &Nearest)?
+            .into_scalar();
+
+        assert!(
+            q_low < q_high,
+            "Low quantile should be less than high quantile"
+        );
+        assert!(q_low >= 0.0, "Quantiles should be non-negative");
+        assert!(q_high <= 99.0, "High quantile should be reasonable");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_image_normalization() -> Result<()> {
+        let mut data = vec![0.0f32; 256];
+        for (i, val) in data.iter_mut().enumerate() {
+            *val = i as f32;
+        }
+
+        let array = Array2::from_shape_vec((16, 16), data)?;
+
+        let min = 10.0f32;
+        let max = 245.0f32;
+        let normalized = array.mapv(|x| ((x.clamp(min, max) - min) / (max - min) * 255.0) as u8);
+
+        let raw_vec = normalized.to_owned().into_raw_vec_and_offset().0;
+        assert_eq!(
+            raw_vec.len(),
+            256,
+            "Normalized array should have 256 elements"
+        );
+
+        assert_eq!(raw_vec[0], 0, "Value below min should be 0");
+        assert_eq!(raw_vec[255], 255, "Value above max should be 255");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_2d_reshape_from_multi_dimensional_array() -> Result<()> {
+        let data: Array4<f32> = Array4::zeros((1, 1, 256, 256)); // (T, C, Y, X)
+
+        let shape = data.shape();
+        let y = shape[shape.len() - 2];
+        let x = shape[shape.len() - 1];
+        let reshaped = data.to_shape((y, x))?.to_owned();
+
+        assert_eq!(reshaped.shape(), &[256, 256]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_different_dtype_conversions() -> Result<()> {
+        let uint8_val: u8 = 200;
+        let uint16_val: u16 = 50000;
+        let int16_val: i16 = -1000;
+        let float64_val: f64 = 123.456;
+
+        let uint8_f32 = uint8_val as f32;
+        let uint16_f32 = uint16_val as f32;
+        let int16_f32 = int16_val as f32;
+        let float64_f32 = float64_val as f32;
+
+        assert!(uint8_f32 > 0.0);
+        assert!(uint16_f32 > 0.0);
+        assert!(int16_f32 < 0.0);
+        assert!((float64_f32 - 123.456).abs() < 0.01);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_image_to_raw_vector_conversion() -> Result<()> {
+        let normalized = Array2::from_shape_vec((16, 16), vec![128u8; 256])?;
+
+        let raw_vec = normalized.into_raw_vec_and_offset().0;
+
+        assert_eq!(raw_vec.len(), 256);
+        assert!(raw_vec.iter().all(|&v| v == 128));
+
+        Ok(())
+    }
 }
