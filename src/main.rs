@@ -1,14 +1,16 @@
 use anyhow::{Ok, Result};
 use clap::Parser;
 use image::{DynamicImage, GrayImage};
-use ndarray::prelude::*;
+use ndarray::{Array2, ArrayD, Axis};
 use ndarray_stats::interpolate::Nearest;
 use ndarray_stats::QuantileExt;
 use noisy_float::types::n64;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::vec;
+use zarrs::array::ArraySubset;
 use zarrs::filesystem::FilesystemStore;
+use zarrs::plugin::ZarrVersion;
 use zarrs_http::HTTPStore;
 
 #[derive(Parser)]
@@ -96,40 +98,43 @@ fn start_and_shape(
 
 fn decode_subset<TStore: zarrs::storage::ReadableStorageTraits + 'static>(
     array: &zarrs::array::Array<TStore>,
-    subset: &zarrs::array_subset::ArraySubset,
+    subset: &ArraySubset,
 ) -> Result<Array2<f32>> {
-    use zarrs::array::DataType;
     let dtype = array.data_type();
-    let decoded = match dtype {
-        DataType::Int8 => array
-            .retrieve_array_subset_ndarray::<i8>(&subset)?
+    let dtype_name = dtype
+        .name(ZarrVersion::V3)
+        .ok_or_else(|| anyhow::anyhow!("Data type has no name"))?
+        .into_owned();
+    let decoded: ArrayD<f32> = match dtype_name.as_str() {
+        "int8" => array
+            .retrieve_array_subset::<ArrayD<i8>>(subset)?
             .mapv(|x| x as f32),
-        DataType::Int16 => array
-            .retrieve_array_subset_ndarray::<i16>(&subset)?
+        "int16" => array
+            .retrieve_array_subset::<ArrayD<i16>>(subset)?
             .mapv(|x| x as f32),
-        DataType::Int32 => array
-            .retrieve_array_subset_ndarray::<i32>(&subset)?
+        "int32" => array
+            .retrieve_array_subset::<ArrayD<i32>>(subset)?
             .mapv(|x| x as f32),
-        DataType::Int64 => array
-            .retrieve_array_subset_ndarray::<i64>(&subset)?
+        "int64" => array
+            .retrieve_array_subset::<ArrayD<i64>>(subset)?
             .mapv(|x| x as f32),
-        DataType::UInt8 => array
-            .retrieve_array_subset_ndarray::<u8>(&subset)?
+        "uint8" => array
+            .retrieve_array_subset::<ArrayD<u8>>(subset)?
             .mapv(|x| x as f32),
-        DataType::UInt16 => array
-            .retrieve_array_subset_ndarray::<u16>(&subset)?
+        "uint16" => array
+            .retrieve_array_subset::<ArrayD<u16>>(subset)?
             .mapv(|x| x as f32),
-        DataType::UInt32 => array
-            .retrieve_array_subset_ndarray::<u32>(&subset)?
+        "uint32" => array
+            .retrieve_array_subset::<ArrayD<u32>>(subset)?
             .mapv(|x| x as f32),
-        DataType::UInt64 => array
-            .retrieve_array_subset_ndarray::<u64>(&subset)?
+        "uint64" => array
+            .retrieve_array_subset::<ArrayD<u64>>(subset)?
             .mapv(|x| x as f32),
-        DataType::Float32 => array.retrieve_array_subset_ndarray::<f32>(&subset)?,
-        DataType::Float64 => array
-            .retrieve_array_subset_ndarray::<f64>(&subset)?
+        "float32" => array.retrieve_array_subset::<ArrayD<f32>>(subset)?,
+        "float64" => array
+            .retrieve_array_subset::<ArrayD<f64>>(subset)?
             .mapv(|x| x as f32),
-        _ => anyhow::bail!("Unsupported data type: {:?}", dtype),
+        _ => anyhow::bail!("Unsupported data type: {}", dtype_name),
     };
     let shape = decoded.shape();
     let y = shape[shape.len() - 2];
@@ -146,7 +151,7 @@ fn read_image_with_store<TStore: zarrs::storage::ReadableStorageTraits + 'static
     let array_shape = array.shape();
     let (start, shape) =
         start_and_shape(&array_shape, cli.slice_indices.as_deref(), cli.crop_size)?;
-    let subset = zarrs::array_subset::ArraySubset::new_with_start_shape(start, shape)?;
+    let subset = ArraySubset::new_with_start_shape(start, shape)?;
     let decoded = decode_subset(&array, &subset)?;
     Ok(decoded)
 }
@@ -198,6 +203,7 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ndarray::prelude::*;
 
     #[test]
     fn test_start_and_shape_default_slicing() -> Result<()> {
@@ -283,10 +289,6 @@ mod tests {
 
     #[test]
     fn test_quantile_computation() -> Result<()> {
-        use ndarray_stats::interpolate::Nearest;
-        use ndarray_stats::QuantileExt;
-        use noisy_float::types::n64;
-
         let data =
             Array2::from_shape_vec((10, 10), (0..100).map(|i| i as f32).collect::<Vec<_>>())?;
 
