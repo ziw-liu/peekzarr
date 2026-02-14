@@ -105,37 +105,34 @@ fn decode_subset<TStore: zarrs::storage::ReadableStorageTraits + 'static>(
         .name(ZarrVersion::V3)
         .ok_or_else(|| anyhow::anyhow!("Data type has no name"))?
         .into_owned();
-    let decoded: ArrayD<f32> = match dtype_name.as_str() {
-        "int8" => array
-            .retrieve_array_subset::<ArrayD<i8>>(subset)?
-            .mapv(|x| x as f32),
-        "int16" => array
-            .retrieve_array_subset::<ArrayD<i16>>(subset)?
-            .mapv(|x| x as f32),
-        "int32" => array
-            .retrieve_array_subset::<ArrayD<i32>>(subset)?
-            .mapv(|x| x as f32),
-        "int64" => array
-            .retrieve_array_subset::<ArrayD<i64>>(subset)?
-            .mapv(|x| x as f32),
-        "uint8" => array
-            .retrieve_array_subset::<ArrayD<u8>>(subset)?
-            .mapv(|x| x as f32),
-        "uint16" => array
-            .retrieve_array_subset::<ArrayD<u16>>(subset)?
-            .mapv(|x| x as f32),
-        "uint32" => array
-            .retrieve_array_subset::<ArrayD<u32>>(subset)?
-            .mapv(|x| x as f32),
-        "uint64" => array
-            .retrieve_array_subset::<ArrayD<u64>>(subset)?
-            .mapv(|x| x as f32),
-        "float32" => array.retrieve_array_subset::<ArrayD<f32>>(subset)?,
-        "float64" => array
-            .retrieve_array_subset::<ArrayD<f64>>(subset)?
-            .mapv(|x| x as f32),
-        _ => anyhow::bail!("Unsupported data type: {}", dtype_name),
+
+    macro_rules! decode_dtype {
+        ($($name:literal => $ty:ty),* $(,)?) => {{
+            match dtype_name.as_str() {
+                $(
+                    $name => {
+                        let decoded: ArrayD<$ty> = array.retrieve_array_subset(subset)?;
+                        decoded.mapv(|x| x as f32)
+                    }
+                )*
+                _ => anyhow::bail!("Unsupported data type: {}", dtype_name),
+            }
+        }};
+    }
+
+    let decoded: ArrayD<f32> = decode_dtype! {
+        "int8" => i8,
+        "int16" => i16,
+        "int32" => i32,
+        "int64" => i64,
+        "uint8" => u8,
+        "uint16" => u16,
+        "uint32" => u32,
+        "uint64" => u64,
+        "float32" => f32,
+        "float64" => f64,
     };
+
     let shape = decoded.shape();
     let y = shape[shape.len() - 2];
     let x = shape[shape.len() - 1];
