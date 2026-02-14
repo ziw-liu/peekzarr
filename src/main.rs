@@ -144,7 +144,12 @@ fn read_image_with_store<TStore: zarrs::storage::ReadableStorageTraits + 'static
     cli: &Cli,
     store: Arc<TStore>,
 ) -> Result<Array2<f32>> {
-    let array = zarrs::array::Array::open(store, &cli.array_name)?;
+    let array_name = if cli.array_name.starts_with('/') {
+        cli.array_name.clone()
+    } else {
+        format!("/{}", cli.array_name)
+    };
+    let array = zarrs::array::Array::open(store, &array_name)?;
     let array_shape = array.shape();
     let (start, shape) =
         start_and_shape(&array_shape, cli.slice_indices.as_deref(), cli.crop_size)?;
