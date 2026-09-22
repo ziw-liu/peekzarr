@@ -76,12 +76,15 @@ fn start_and_shape(
             push_index(&mut start, i, *slice_index);
         }
     }
-    for i in start.len()..(ndims_to_be_sliced) {
-        push_index(&mut start, i, array_shape[i] / 2);
+    for (i, size) in array_shape
+        .iter()
+        .enumerate()
+        .take(ndims_to_be_sliced)
+        .skip(start.len())
+    {
+        push_index(&mut start, i, size / 2);
     }
-    for _ in 0..2 {
-        start.push(0);
-    }
+    start.extend([0, 0]);
     let mut shape = vec![1; ndims];
     let axes = ["Y", "X"];
     for i in 0..2 {
@@ -151,8 +154,7 @@ fn read_image_with_store<TStore: zarrs::storage::ReadableStorageTraits + 'static
     };
     let array = zarrs::array::Array::open(store, &array_name)?;
     let array_shape = array.shape();
-    let (start, shape) =
-        start_and_shape(&array_shape, cli.slice_indices.as_deref(), cli.crop_size)?;
+    let (start, shape) = start_and_shape(array_shape, cli.slice_indices.as_deref(), cli.crop_size)?;
     let subset = ArraySubset::new_with_start_shape(start, shape)?;
     let decoded = decode_subset(&array, &subset)?;
     Ok(decoded)
